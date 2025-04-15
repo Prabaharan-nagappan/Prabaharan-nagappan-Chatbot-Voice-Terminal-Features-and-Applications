@@ -1,0 +1,5 @@
+SpeechRecognition>=3.8.1
+gTTS>=2.3.1      # For online TTS
+pyttsx3>=2.90    # For offline TTS
+playsound>=1.3.0
+pyaudio>=0.2.12  # For microphone access
