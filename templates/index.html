@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voice Chatbot</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Voice Chatbot</h1>
+        
+        <div class="chat-container">
+            <div id="chat-log"></div>
+            
+            <div class="input-area">
+                <input type="text" id="user-input" placeholder="Type your message...">
+                <button id="send-text">Send</button>
+                <button id="record-audio">Record Audio</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatLog = document.getElementById('chat-log');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-text');
+        const recordBtn = document.getElementById('record-audio');
+        
+        let mediaRecorder;
+        let audioChunks = [];
+        
+        // Text input handler
+        sendBtn.addEventListener('click', async () => {
+            const text = userInput.value.trim();
+            if (!text) return;
+            
+            addMessage(text, 'user');
+            userInput.value = '';
+            
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text })
+            });
+            
+            const data = await response.json();
+            addMessage(data.text, 'bot');
+            playAudio(data.audio);
+        });
+        
+        // Voice recording handler
+        recordBtn.addEventListener('mousedown', startRecording);
+        recordBtn.addEventListener('mouseup', stopRecording);
+        
+        async function startRecording() {
+            audioChunks = [];
+            recordBtn.textContent = 'Recording...';
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.start();
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                recordBtn.textContent = 'Record Audio';
+            }
+        }
+        
+        async function stopRecording() {
+            if (!mediaRecorder) return;
+            
+            mediaRecorder.stop();
+            mediaRecorder.onstop = async () => {
+                recordBtn.textContent = 'Record Audio';
+                
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.wav');
+                
+                addMessage("[Voice Message]", 'user');
+                
+                const response = await fetch('/api/upload-audio', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                if (data.error) {
+                    addMessage(data.error, 'bot');
+                } else {
+                    addMessage(data.text, 'bot');
+                    playAudio(data.audio);
+                }
+            };
+        }
+        
+        function addMessage(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            messageDiv.textContent = text;
+            chatLog.appendChild(messageDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+        
+        function playAudio(audioPath) {
+            const audio = new Audio(audioPath);
+            audio.play();
+        }
+    </script>
+</body>
+</html>
