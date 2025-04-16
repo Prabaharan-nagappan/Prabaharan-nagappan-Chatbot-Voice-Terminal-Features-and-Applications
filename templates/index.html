@@ -42,6 +42,7 @@
             padding: 8px 12px;
             border-radius: 18px;
             max-width: 70%;
+            word-wrap: break-word;
         }
         
         .user {
@@ -93,6 +94,13 @@
         
         #record-audio.recording {
             background-color: #28a745;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
         }
     </style>
 </head>
@@ -104,7 +112,7 @@
             <div id="chat-log"></div>
             
             <div class="input-area">
-                <input type="text" id="user-input" placeholder="Type your message...">
+                <input type="text" id="user-input" placeholder="Type your message..." autocomplete="off">
                 <button id="send-text">Send</button>
                 <button id="record-audio">Record Audio</button>
             </div>
@@ -127,6 +135,7 @@
             
             addMessage(text, 'user');
             userInput.value = '';
+            userInput.focus();
             
             try {
                 const response = await fetch('/api/chat', {
@@ -136,6 +145,10 @@
                     },
                     body: JSON.stringify({ text })
                 });
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
                 
                 const data = await response.json();
                 addMessage(data.text, 'bot');
@@ -156,6 +169,7 @@
         // Voice recording handlers
         recordBtn.addEventListener('mousedown', startRecording);
         recordBtn.addEventListener('mouseup', stopRecording);
+        recordBtn.addEventListener('mouseleave', stopRecording);
         recordBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
             startRecording();
@@ -183,8 +197,7 @@
                 mediaRecorder.start(100); // Collect data every 100ms
             } catch (err) {
                 console.error('Error accessing microphone:', err);
-                recordBtn.textContent = 'Record Audio';
-                recordBtn.classList.remove('recording');
+                stopRecording();
                 addMessage("Microphone access denied", 'bot');
             }
         }
@@ -193,12 +206,16 @@
             if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
             
             mediaRecorder.stop();
-            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            if (mediaRecorder.stream) {
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
             
             recordBtn.textContent = 'Record Audio';
             recordBtn.classList.remove('recording');
             
             mediaRecorder.onstop = async () => {
+                if (audioChunks.length === 0) return;
+                
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 const formData = new FormData();
                 formData.append('audio', audioBlob, 'recording.webm');
@@ -210,6 +227,10 @@
                         method: 'POST',
                         body: formData
                     });
+                    
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
                     
                     const data = await response.json();
                     if (data.error) {
