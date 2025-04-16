@@ -5,6 +5,7 @@ from gtts import gTTS
 import datetime
 import random
 from werkzeug.utils import secure_filename
+import subprocess
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'audio'
@@ -82,27 +83,47 @@ def upload_audio():
         return jsonify({"error": "No selected file"}), 400
         
     if audio_file:
-        filename = secure_filename(f"user_audio_{datetime.datetime.now().timestamp()}.wav")
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        audio_file.save(filepath)
+        # Save the original file
+        original_filename = secure_filename(f"user_audio_{datetime.datetime.now().timestamp()}.webm")
+        original_filepath = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
+        audio_file.save(original_filepath)
         
-        # Process audio
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(filepath) as source:
-            audio = recognizer.record(source)
-            try:
-                text = recognizer.recognize_google(audio)
-                response_text = process_text_input(text)
-                response_audio = text_to_speech(response_text)
-                
-                return jsonify({
-                    "text": response_text,
-                    "audio": f"/audio/{response_audio}"
-                })
-            except sr.UnknownValueError:
-                return jsonify({"error": "Could not understand audio"}), 400
-            except sr.RequestError:
-                return jsonify({"error": "Speech service unavailable"}), 503
+        # Convert to WAV format
+        wav_filename = secure_filename(f"user_audio_{datetime.datetime.now().timestamp()}.wav")
+        wav_filepath = os.path.join(app.config['UPLOAD_FOLDER'], wav_filename)
+        
+        try:
+            # Convert using ffmpeg
+            subprocess.run([
+                'ffmpeg', '-i', original_filepath,
+                '-acodec', 'pcm_s16le',
+                '-ac', '1',
+                '-ar', '16000',
+                wav_filepath
+            ], check=True)
+            
+            # Process the converted WAV file
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(wav_filepath) as source:
+                audio = recognizer.record(source)
+                try:
+                    text = recognizer.recognize_google(audio)
+                    response_text = process_text_input(text)
+                    response_audio = text_to_speech(response_text)
+                    
+                    return jsonify({
+                        "text": response_text,
+                        "audio": f"/audio/{response_audio}"
+                    })
+                except sr.UnknownValueError:
+                    return jsonify({"error": "Could not understand audio"}), 400
+                except sr.RequestError:
+                    return jsonify({"error": "Speech service unavailable"}), 503
+                    
+        except subprocess.CalledProcessError:
+            return jsonify({"error": "Failed to process audio file"}), 500
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
 @app.route('/audio/<filename>')
 def get_audio(filename):
